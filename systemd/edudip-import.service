@@ -1,0 +1,7 @@
+[Unit]
+Description=Import edudip webinar recordings
+
+[Service]
+Type=simple
+ExecStart=/opt/edudip/import
+User=edudip

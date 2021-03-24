@@ -1,0 +1,39 @@
+
+edudip:
+  # Edudip API tokens
+  # Defining multiple tokens will make the tool import webinars from multiple accounts in sequence.
+  tokens:
+    - 'OIWGIGARQFNTCT3MYN5SLW9B5DICF0...'
+
+opencast:
+  # Opencast host in which videos should be imported.
+  # Definde protocol, host and port. Do not define a path.
+  host: 'https://example.opencast.org'
+
+  # Workflow to use for imported events
+  workflow: edudip-import
+
+  # User credentials to use when talking to Opencast.
+  user: admin
+  password: opencast
+
+metadata:
+  # Separator by which to split the edudip webinar title into Opencast title, creator and contributor.
+  # If none is specified, the edudip title will be passed on unmodified
+  separator: '*'
+
+  # Characters to remove from separated parts of a title
+  strip_chars: ' -'
+
+  # Map of strings identifying certain series.
+  # If the title contains the key, the event is added to the series with the given identifier.
+  series_identifier:
+    Computer Science 101: 178caa49-8b83-47ed-9ea6-45d123568999
+    Molecular Biology: c14e214b-bc06-4202-aa3d-3762344cd311
+
+
+# File used to keep track of which events have already been processed
+processed_file: './processed.json'
+
+# Log level for importer
+loglevel: info

@@ -1,0 +1,196 @@
+#!/usr/bin/env python3
+
+import yaml
+import json
+import requests
+import pytz
+import logging
+from datetime import datetime, timedelta
+from requests.auth import HTTPBasicAuth
+
+__config = {}
+
+# edudip specific constants
+RECORDINGS_URL = 'https://api.edudip-next.com/api/recordings'
+DOWNLOAD_URL = 'https://api.edudip-next.com/api/recordings/{id}/download-url'
+TZ = pytz.timezone('Europe/Berlin')
+
+
+def auth():
+    '''Return basic auth header for Opencast to use in API requests
+    '''
+    user = __config['opencast']['user']
+    password = __config['opencast']['password']
+    return HTTPBasicAuth(user, password)
+
+
+def ingest_url():
+    '''Construct the ingest URL based on the admin server URL and the workflow
+    definition identifier.
+    '''
+    host = __config['opencast']['host']
+    workflow = __config['opencast']['workflow']
+    return f'{host}/ingest/addMediaPackage/{workflow}'
+
+
+def load_config():
+    '''Load importer configuration, trying files in the following order:
+    - ./edudip-import.yml
+    - /etc/edudip-import/config.yml
+    '''
+    global __config
+    for filename in ('edudip-import.yml', '/etc/edudip-import/config.yml'):
+        with open(filename, 'r') as f:
+            __config = yaml.safe_load(f)
+            configure_logging()
+            logging.info('loaded configuration from %s', filename)
+            logging.debug('loaded configuration %s', __config)
+            return __config
+
+
+def configure_logging():
+    '''Configure logging based on the log level defined in the configuration.
+    '''
+    loglevel = __config.get('loglevel', 'info').upper()
+    logging.basicConfig(level=getattr(logging, loglevel), encoding='utf-8')
+    logging.info('set log level to %s', loglevel)
+
+
+def load_data():
+    '''Load list of already processed webinars to not import them again. The
+    location of the persistence is configured in the configuration file.
+    '''
+    filename = __config['processed_file']
+    try:
+        with open(filename, 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return []
+
+
+def save_data(data):
+    '''Save list of already processed webinars to not import them again. The
+    location of the persistence is configured in the configuration file.
+    '''
+    filename = __config['processed_file']
+    with open(filename, 'w') as outfile:
+        json.dump(data, outfile)
+    logging.info('Saved processed webinars in %s', filename)
+
+
+def process_edudip_title(datastr):
+    '''Try extracting additional metadata from title.
+    '''
+    title = datastr
+    creator = None
+    contributors = []
+    series = None
+
+    # Split title into title, creator and contributor
+    metadata = __config.get('metadata', {})
+    separator = metadata.get('separator')
+    if separator:
+        strip_chars = metadata.get('strip_chars', ' ')
+        parts = datastr.split(separator, 2)
+        title = parts[0].strip(strip_chars)
+        creator = parts[1].strip(strip_chars) if len(parts) > 1 else None
+        contributors = [c.strip(strip_chars) for c in parts[2:]]
+
+    # Check for series
+    for key, series_id in (metadata.get('series_identifier') or {}).items():
+        logging.debug('Checking for series %s using key `%s`: %s',
+                      series_id, key, key in datastr)
+        if key in datastr:
+            series = series_id
+            break
+
+    return title, creator, contributors, series
+
+
+def ingest(eventid, title, start, end, url, language):
+    '''Ingest webinar to Opencast.
+    '''
+    title, creator, contributors, series = process_edudip_title(title)
+    fields = [
+        ('flavor', (None, 'presentation/source')),
+        ('mediaUri', (None, url)),
+        ('title', (None, title)),
+        ('spatial', (None, 'edudip')),
+        ('source', (None, f'webinar {eventid}')),
+        ('created', (None, start)),
+        ('language', (None, language)),
+        ('temporal', (None, f'start={start}; end={end}; scheme=W3C-DTF;'))
+        ]
+
+    # Additional metadata
+    if creator:
+        fields.append(('creator', (None, creator)))
+    for contributor in contributors:
+        fields.append(('contributor', (None, contributor)))
+    if series:
+        fields.append(('isPartOf', (None, series)))
+
+    logging.debug('Ingesting data: %s', fields)
+
+    # Ingest media
+    r = requests.post(ingest_url(), auth=auth(), files=fields)
+    if not r.ok:
+        raise RuntimeError('Ingest failed')
+
+
+def get_webinars(token):
+    '''Get webinars from edudip API.
+    '''
+    logging.debug('Get events using token %s', token)
+    headers = {'Authorization': f'Bearer {token}'}
+    r = requests.get(RECORDINGS_URL, headers=headers).json()
+    if not r['success']:
+        raise Exception('Request failed')
+    return r['recordings']
+
+
+def get_download_url(eventid, token):
+    '''Get download URL for a given webinar
+    '''
+    url = DOWNLOAD_URL.format(id=eventid)
+    headers = {'Authorization': f'Bearer {token}'}
+    return requests.get(url, headers=headers).json().get('download_url')
+
+
+def import_webinars(token, processed):
+    '''Import edudip webinars for a given account token.
+    '''
+    for recording in get_webinars(token):
+        logging.debug('recording %s', recording)
+        eventid = recording.get('id')
+        if eventid in processed:
+            logging.debug('skipping webinar %s', eventid)
+            continue
+
+        # get metadata
+        duration = timedelta(minutes=recording.get('duration', 0))
+        date = datetime.strptime(recording['date'], '%Y-%m-%d %H:%M:%S')
+        utcstart = date - TZ.fromutc(date).utcoffset()
+        utcend = utcstart + duration
+        startstr = utcstart.strftime('%Y-%m-%dT%H:%MZ')
+        endstr = utcend.strftime('%Y-%m-%dT%H:%MZ')
+        title = recording.get('webinar', {}).get('title')
+        language = recording.get('webinar', {}).get('language', '')
+        url = get_download_url(eventid, token)
+
+        logging.info('importing webinar %s: %s', eventid, title)
+        ingest(eventid, title, startstr, endstr, url, language)
+
+        processed.append(eventid)
+        save_data(processed)
+
+
+def main():
+    load_config()
+    processed = load_data()
+    for token in __config['edudip']['tokens']:
+        import_webinars(token, processed)
+
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definition xmlns="http://workflow.opencastproject.org">
+
+  <id>edudip-import</id>
+  <title>edudip import</title>
+  <description>Workflow to import media from edudip.</description>
+  <operations>
+
+    <operation
+        id="defaults"
+        description="Applying workflow configuration">
+      <configurations>
+        <configuration key="skipEditorPreview">true</configuration>
+        <configuration key="publishToEngage">true</configuration>
+        <configuration key="publishToApi">true</configuration>
+        <configuration key="publishToOaiPmh">false</configuration>
+        <configuration key="publishToAws">false</configuration>
+        <configuration key="thumbnailType">0</configuration>
+        <configuration key="thumbnailPosition">1</configuration>
+      </configurations>
+    </operation>
+
+    <operation
+      id="ingest-download"
+      max-attempts="4"
+      description="Download video files from edudip">
+      <configurations>
+        <configuration key="source-flavors">presentation/source</configuration>
+      </configurations>
+    </operation>
+
+    <operation
+      id="include"
+      description="Process recording">
+      <configurations>
+        <configuration key="workflow-id">studio-upload</configuration>
+      </configurations>
+    </operation>
+  </operations>
+</definition>
