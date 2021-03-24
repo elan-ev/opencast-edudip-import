@@ -2,6 +2,7 @@
 Description=Import edudip webinar recordings
 
 [Service]
-Type=simple
+Type=oneshot
+WorkingDirectory=/opt/edudip
 ExecStart=/opt/edudip/import
 User=edudip
