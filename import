@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import sys
 import yaml
 import json
 import requests
@@ -192,5 +193,13 @@ def main():
         import_webinars(token, processed)
 
 
+def test_config():
+    print('Loading configuration to test if the syntax is okay...')
+    load_config()
+
+
 if __name__ == '__main__':
-    main()
+    if len(sys.argv) > 1 and sys.argv[1] == '-t':
+        test_config()
+    else:
+        main()

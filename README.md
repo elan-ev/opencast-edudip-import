@@ -26,11 +26,15 @@ if a valid configuration is found:
 For further details about the configuration keys, take a look at the
 configuration file. All keys are documented in the file.
 
+To verify the syntax of the configuration is okay, you can run:
+
+    ./import -t
+
 
 Workflow
 --------
 
-While you can use any Opencast workflow  with the importer, this repository
+While you can use any Opencast workflow with the importer, this repository
 contains a minimal recommended workflow to use. The workflow is very simple and
 consists of just three steps:
 
